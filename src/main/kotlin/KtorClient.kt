@@ -68,24 +68,11 @@ val ktorOkHttpClient = HttpClient(OkHttp) {
     }
 }
 
-val jettyClient = HttpClient(Jetty) {
-    engine {
-        configureClient {}
-    }
-}
-
 val javaClient = HttpClient(Java) {
     engine {
         config {
             connectTimeout(100_000.milliseconds.toJavaDuration())
         }
-    }
-}
-
-suspend fun ktorJettyRequest(seconds: Int, a: Int) {
-    jettyClient.get("https://api.kt.academy/delay") {
-        parameter("delay", seconds)
-        parameter("a", a)
     }
 }
 
