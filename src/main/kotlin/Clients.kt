@@ -28,16 +28,16 @@ object RetrofitClient : ClientToTest {
     override val name: String = "Retrofit"
     var dispatcher: Dispatcher? = null
     var apiService: ApiService? = null
+    var client: OkHttpClient? = null
 
     override fun start(requestsToStart: Int) {
         dispatcher = Dispatcher().apply {
             maxRequests = requestsToStart
             maxRequestsPerHost = requestsToStart
         }
+        client = OkHttpClient.Builder().dispatcher(dispatcher!!).build()
         val retrofit: Retrofit = Retrofit.Builder()
-            .client(
-                OkHttpClient.Builder().dispatcher(dispatcher!!).build()
-            )
+            .client(client!!)
             .baseUrl("https://api.kt.academy/")
             .addConverterFactory(ScalarsConverterFactory.create())
             .build()
@@ -54,8 +54,7 @@ object RetrofitClient : ClientToTest {
     }
 
     override fun close() {
-        runCatching { dispatcher?.executorService?.shutdown() }
-        runCatching { dispatcher?.executorService?.shutdownNow() }
+        interruptOkHttpThreads(dispatcher!!, client!!)
         dispatcher = null
         apiService = null
     }
@@ -143,6 +142,7 @@ object KtorOkHttp : KtorClient("Ktor OkHttp") {
         super.close()
         runCatching { dispatcher?.executorService?.shutdown() }
         runCatching { dispatcher?.executorService?.shutdownNow() }
+        interruptOkHttpThreads(dispatcher!!)
         dispatcher = null
     }
 }
@@ -157,9 +157,10 @@ object KtorJavaClient : KtorClient("Ktor Java") {
     }
 }
 
-class FuelClient : ClientToTest {
+object FuelClient : ClientToTest {
     override val name: String = "Fuel"
     private var dispatcher: Dispatcher? = null
+    private var client: OkHttpClient? = null
     private var fuel: HttpLoader? = null
 
     override fun start(requestsToStart: Int) {
@@ -167,9 +168,8 @@ class FuelClient : ClientToTest {
             maxRequests = requestsToStart
             maxRequestsPerHost = requestsToStart
         }
-        fuel = FuelBuilder().config(
-            OkHttpClient.Builder().dispatcher(dispatcher!!).build()
-        ).build()
+        client = OkHttpClient.Builder().dispatcher(dispatcher!!).build()
+        fuel = FuelBuilder().config(client!!).build()
     }
 
     override suspend fun request(seconds: Int, a: Int) {
@@ -177,10 +177,23 @@ class FuelClient : ClientToTest {
     }
 
     override fun close() {
-        runCatching { dispatcher!!.executorService.shutdown() }
-        runCatching { dispatcher!!.executorService.shutdownNow() }
+        interruptOkHttpThreads(dispatcher!!, client!!)
         dispatcher = null
+        client = null
         fuel = null
+
+    }
+}
+
+fun interruptOkHttpThreads(dispatcher: Dispatcher, client: OkHttpClient? = null) {
+    runCatching { dispatcher.executorService.shutdown() }
+    runCatching { dispatcher.executorService.shutdownNow() }
+    client?.cache?.close()
+    client?.connectionPool?.evictAll()
+    for (thread in Thread.getAllStackTraces().keys) {
+        if (thread != null && thread.name.contains("OkHttp")) {
+            thread.interrupt()
+        }
     }
 }
 
@@ -191,5 +204,5 @@ val clients: List<ClientToTest> = listOf(
     KtorApacheClient,
     KtorApache5Client,
     KtorJavaClient,
-    FuelClient(),
+    FuelClient,
 )
