@@ -7,7 +7,7 @@ import java.util.concurrent.atomic.AtomicInteger
 import kotlin.time.measureTime
 
 fun main() = runBlocking {
-    testClient(KtorOkHttp) // This is to print an annoying warning about SLF4J
+    testClient(KtorCioClient) // This is to print an annoying warning about SLF4J
     println("Warmup")
     printHeader()
     for (client in clients) {
@@ -44,6 +44,12 @@ suspend fun testClient(client: ClientToTest): ThreadInfo {
                     finished.incrementAndGet()
                 }
             }
+            // TO TEST IF Dispatchers.IO IS BLOCKED
+//            repeat(250 * 64) {
+//                launch(Dispatchers.IO) {
+//                    Thread.sleep(10)
+//                }
+//            }
             delay(1000)
 
             threadRaport = threadRaport(threadsActiveBefore)
@@ -147,4 +153,5 @@ fun threadRaport(threadsActiveBefore: Set<Thread>): ThreadInfo {
     )
 }
 
-fun Thread.isActive() = isAlive && !isInterrupted && stackTrace.firstOrNull()?.methodName != "park"
+fun Thread.isActive() = isAlive && !isInterrupted
+//        && stackTrace.firstOrNull()?.methodName != "park"
