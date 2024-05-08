@@ -13,6 +13,7 @@ repositories {
 }
 
 dependencies {
+    implementation("org.jetbrains.kotlin:kotlin-reflect:1.9.22")
     implementation("com.github.kittinunf.fuel:fuel:3.0.0-alpha1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.0")
     implementation("com.squareup.retrofit2:retrofit:2.9.0")
