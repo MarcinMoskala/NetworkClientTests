@@ -57,6 +57,7 @@ object RetrofitClient : ClientToTest {
         interruptOkHttpThreads(dispatcher!!, client!!)
         dispatcher = null
         apiService = null
+        client = null
     }
 }
 

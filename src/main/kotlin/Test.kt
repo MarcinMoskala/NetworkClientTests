@@ -7,20 +7,20 @@ import java.util.concurrent.atomic.AtomicInteger
 import kotlin.time.measureTime
 
 fun main() = runBlocking {
-    testClient(KtorCioClient) // This is to print an annoying warning about SLF4J
+    testClient(KtorOkHttp) // This is to print an annoying warning about SLF4J
     println("Warmup")
-    printHeader()
-    for (client in clients) {
-        testClient(client)
-    }
+//    printHeader()
+//    for (client in clients) {
+//        testClient(client)
+//    }
     delay(1000)
     val accumulatedThreadReports = mutableMapOf<ClientToTest, ThreadInfo>()
-    repeat(10) {
+    repeat(5) {
         println("Round ${it + 1}")
         printHeader()
         for (client in clients.shuffled()) {
             val result = testClient(client)
-            accumulatedThreadReports[client] = (accumulatedThreadReports[client] ?: ThreadInfo(0, 0, 0, 0)) + result
+            accumulatedThreadReports[client] = (accumulatedThreadReports[client] ?: ThreadInfo(0, 0, 0, 0, 0, 0)) + result
         }
     }
     println("Averages")
@@ -32,7 +32,7 @@ fun main() = runBlocking {
 
 suspend fun testClient(client: ClientToTest): ThreadInfo {
     val finished = AtomicInteger(0)
-    val threadsActiveBefore = Thread.getAllStackTraces().keys.filter { it.isActive() }.toSet()
+    val threadsActiveBefore = Thread.getAllStackTraces().keys.filter { it.isActiveAndUnparked() }.toSet()
     var threadRaport: ThreadInfo
     val requestsToStart = 500
     client.start(requestsToStart)
@@ -45,11 +45,12 @@ suspend fun testClient(client: ClientToTest): ThreadInfo {
                 }
             }
             // TO TEST IF Dispatchers.IO IS BLOCKED
-//            repeat(250 * 64) {
-//                launch(Dispatchers.IO) {
-//                    Thread.sleep(10)
-//                }
-//            }
+            delay(500)
+            repeat(150 * 64) {
+                launch(Dispatchers.IO) {
+                    Thread.sleep(10)
+                }
+            }
             delay(1000)
 
             threadRaport = threadRaport(threadsActiveBefore)
@@ -71,12 +72,13 @@ suspend fun testClient(client: ClientToTest): ThreadInfo {
 fun printHeader() {
     buildString {
         append("Client".padEnd(15))
-        append("ActiveAndNew".padEnd(15))
+        append("ActiveUnparkedNew".padEnd(20))
+        append("ActiveUnparked".padEnd(20))
+        append("ActiveNew".padEnd(15))
         append("Active".padEnd(15))
-        append("Threads".padEnd(15))
-        append("ActiveBefore".padEnd(15))
-        append("ActiveAfter".padEnd(15))
+        append("All".padEnd(15))
         append("Time".padEnd(15))
+        append("Threads before".padEnd(15))
     }.let(::println)
 }
 
@@ -85,26 +87,31 @@ suspend fun printThreadInfo(
     threadRaport: ThreadInfo,
     close: Boolean = false,
     threadsBefore: Set<Thread>? = null
-) {
-    val clientName = client.name.plus(":").padEnd(15)
-    val all = threadRaport.all.toString().padEnd(15)
-    val active = threadRaport.active.toString().padEnd(15)
-    val activeAndNew = threadRaport.activeAndNew.toString().padEnd(15)
-    val activeBefore = threadRaport.activeBefore.toString().padEnd(15)
-    val time = threadRaport.time.toString().padEnd(15)
+) = buildString {
+    append(client.name.plus(":").padEnd(15))
+    append(threadRaport.activeUnparkedNew.toString().padEnd(20))
+    append(threadRaport.activeUnparked.toString().padEnd(20))
+    append(threadRaport.activeNew.toString().padEnd(15))
+    append(threadRaport.active.toString().padEnd(15))
+    append(threadRaport.all.toString().padEnd(15))
+    append(threadRaport.time.toString().padEnd(15))
     if (close) {
         client.close()
         restartCoroutineDispatchers()
         forceGC()
         delay(1000)
-        val threadsAfterRestart = Thread.getAllStackTraces().keys.filter { it.isActive() }
+        val unparkedBefore = threadsBefore.orEmpty().filter { it.isActiveAndUnparked() }
+        val threadsAfterRestart = Thread.getAllStackTraces().keys.filter { it.isActiveAndUnparked() }
         val threadsAfterRestartCount = threadsAfterRestart.count().toString().padEnd(15)
-        val newThreads = threadsAfterRestart - (threadsBefore ?: emptySet())
-        println("$clientName$activeAndNew$active$all$activeBefore$threadsAfterRestartCount$time   $newThreads")
+        append(("${threadRaport.activeBefore} -> $threadsAfterRestartCount").padEnd(15))
+        val newThreads = threadsAfterRestart - unparkedBefore
+        if (newThreads.isNotEmpty()) {
+            append("New threads: $newThreads")
+        }
     } else {
-        println("$clientName$activeAndNew$active$all$activeBefore$time")
+        append(("${threadRaport.activeBefore}").padEnd(15))
     }
-}
+}.let(::println)
 
 // Hack
 suspend fun restartCoroutineDispatchers() {
@@ -121,37 +128,51 @@ fun forceGC() {
     System.gc()
 }
 
-data class ThreadInfo(val all: Int, val active: Int, val activeAndNew: Int, val activeBefore: Int, var time: Long = 0) {
+data class ThreadInfo(
+    val all: Int,
+    val active: Int,
+    val activeNew: Int,
+    val activeUnparkedNew: Int,
+    val activeUnparked: Int,
+    val activeBefore: Int,
+    var time: Long = 0
+) {
     operator fun plus(other: ThreadInfo) = ThreadInfo(
         all = all + other.all,
         active = active + other.active,
-        activeAndNew = activeAndNew + other.activeAndNew,
+        activeNew = activeNew + other.activeNew,
         activeBefore = activeBefore + other.activeBefore,
+        activeUnparkedNew = activeUnparkedNew + other.activeUnparkedNew,
+        activeUnparked = activeUnparked + other.activeUnparked,
         time = time + other.time
     )
 
     operator fun div(divider: Int) = ThreadInfo(
         all = all / divider,
         active = active / divider,
-        activeAndNew = activeAndNew / divider,
+        activeNew = activeNew / divider,
         activeBefore = activeBefore / divider,
+        activeUnparkedNew = activeUnparkedNew / divider,
+        activeUnparked = activeUnparked / divider,
         time = time / divider
     )
 }
 
 fun threadRaport(threadsActiveBefore: Set<Thread>): ThreadInfo {
-    val activeAndNew = Thread.getAllStackTraces().keys.filter {
-        it.isActive() && it !in threadsActiveBefore
-    }
     val allThreads = Thread.getAllStackTraces().keys
+    val activeAndNew = allThreads.filter { it.isActive() && it !in threadsActiveBefore }
+    val activeUnparkedNew = allThreads.filter { it.isActiveAndUnparked() && it !in threadsActiveBefore }
+    val activeUnparked = allThreads.filter { it.isActiveAndUnparked() }
     val activeThreads = allThreads.filter { it.isActive() }
     return ThreadInfo(
         all = allThreads.size,
         active = activeThreads.size,
-        activeAndNew = activeAndNew.size,
-        activeBefore = threadsActiveBefore.size
+        activeNew = activeAndNew.size,
+        activeBefore = threadsActiveBefore.size,
+        activeUnparkedNew = activeUnparkedNew.size,
+        activeUnparked = activeUnparked.size,
     )
 }
 
+fun Thread.isActiveAndUnparked() = isActive() && stackTrace.firstOrNull()?.methodName != "park"
 fun Thread.isActive() = isAlive && !isInterrupted
-//        && stackTrace.firstOrNull()?.methodName != "park"
