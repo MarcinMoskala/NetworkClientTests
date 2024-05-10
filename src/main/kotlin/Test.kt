@@ -45,12 +45,12 @@ suspend fun testClient(client: ClientToTest): ThreadInfo {
                 }
             }
             // TO TEST IF Dispatchers.IO IS BLOCKED
-            delay(500)
-            repeat(150 * 64) {
-                launch(Dispatchers.IO) {
-                    Thread.sleep(10)
-                }
-            }
+//            delay(500)
+//            repeat(150 * 64) {
+//                launch(Dispatchers.IO) {
+//                    Thread.sleep(10)
+//                }
+//            }
             delay(1000)
 
             threadRaport = threadRaport(threadsActiveBefore)
