@@ -15,7 +15,7 @@ fun main() = runBlocking {
 //    }
     delay(1000)
     val accumulatedThreadReports = mutableMapOf<ClientToTest, ThreadInfo>()
-    repeat(5) {
+    repeat(10) {
         println("Round ${it + 1}")
         printHeader()
         for (client in clients.shuffled()) {
